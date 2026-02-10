@@ -83,4 +83,38 @@ def register_owner(request: schemas.RegisterOwnerRequest, db: Session = Depends(
     
     return new_owner
 
+@router.post("/reset-password", response_model=schemas.PasswordResetResponse)
+def reset_password(
+    request: schemas.PasswordResetRequest,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_active_owner)
+):
+    """Reset a user's password (Owner only - can reset passwords within their organization)"""
+    
+    # Find the user to reset
+    user_to_reset = db.query(models.User).filter(models.User.username == request.username).first()
+    
+    if not user_to_reset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Verify the owner can only reset passwords for users in their organization
+    if user_to_reset.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only reset passwords for users in your organization"
+        )
+    
+    # Hash and update the new password
+    new_password_hash = auth.get_password_hash(request.new_password)
+    user_to_reset.password_hash = new_password_hash
+    
+    db.commit()
+    
+    return {
+        "message": "Password successfully reset",
+        "username": user_to_reset.username
+    }
 

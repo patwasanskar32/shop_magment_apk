@@ -74,4 +74,12 @@ class OrganizationResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# Password Reset Schemas
+class PasswordResetRequest(BaseModel):
+    username: str
+    new_password: str
+
+class PasswordResetResponse(BaseModel):
+    message: str
+    username: str
 
