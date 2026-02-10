@@ -118,3 +118,30 @@ def reset_password(
         "username": user_to_reset.username
     }
 
+@router.post("/self-reset-password", response_model=schemas.PasswordResetResponse)
+def self_reset_password(
+    request: schemas.PasswordResetRequest,
+    db: Session = Depends(database.get_db)
+):
+    """Self-service password reset (NO authentication required - for forgot password)"""
+    
+    # Find the user
+    user = db.query(models.User).filter(models.User.username == request.username).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Username not found"
+        )
+    
+    # Hash and update the new password
+    new_password_hash = auth.get_password_hash(request.new_password)
+    user.password_hash = new_password_hash
+    
+    db.commit()
+    
+    return {
+        "message": "Password successfully reset",
+        "username": user.username
+    }
+
