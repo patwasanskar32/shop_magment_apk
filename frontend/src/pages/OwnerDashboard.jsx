@@ -93,8 +93,8 @@ const StaffManager = ({ token }) => {
 
 const AttendanceManager = ({ token }) => {
     const [attendance, setAttendance] = useState([])
-    const [manual, setManual] = useState({ user_id: '', status: 'Present' })
-    const [barcode, setBarcode] = useState('')
+    const [staff, setStaff] = useState([])
+    const [selectedStaffId, setSelectedStaffId] = useState('')
 
     const fetchAttendance = async () => {
         try {
@@ -105,57 +105,151 @@ const AttendanceManager = ({ token }) => {
         } catch (e) { console.error(e) }
     }
 
-    useEffect(() => { fetchAttendance() }, [])
-
-    const markManual = async (e) => {
-        e.preventDefault()
+    const fetchStaff = async () => {
         try {
-            await axios.post(`${API_BASE_URL}/attendance/mark`, manual, {
+            const res = await axios.get(`${API_BASE_URL}/staff/all`, {
                 headers: { Authorization: `Bearer ${token}` }
             })
-            fetchAttendance()
-        } catch (e) { alert('Error marking attendance') }
+            setStaff(res.data)
+        } catch (e) { console.error(e) }
     }
 
-    const markBarcode = async (e) => {
-        e.preventDefault()
+    useEffect(() => {
+        fetchAttendance()
+        fetchStaff()
+    }, [])
+
+    const handleCheckIn = async () => {
+        if (!selectedStaffId) {
+            alert('Please select a staff member')
+            return
+        }
         try {
-            await axios.post(`${API_BASE_URL}/attendance/barcode`, { barcode }, {
+            await axios.post(`${API_BASE_URL}/attendance/check-in?user_id=${selectedStaffId}`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             })
-            setBarcode('')
             fetchAttendance()
-            alert('Marked via Barcode!')
-        } catch (e) { alert('Error/Already Marked') }
+            setSelectedStaffId('')
+            alert('✅ Check-in successful!')
+        } catch (e) {
+            alert(e.response?.data?.detail || 'Error checking in')
+        }
+    }
+
+    const handleCheckOut = async (attendanceId) => {
+        try {
+            await axios.post(`${API_BASE_URL}/attendance/check-out/${attendanceId}`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            })
+            fetchAttendance()
+            alert('✅ Check-out successful!')
+        } catch (e) {
+            alert(e.response?.data?.detail || 'Error checking out')
+        }
     }
 
     return (
         <div>
-            <h3>Attendance</h3>
-            <div style={{ display: 'flex', gap: '2rem', marginBottom: '1rem' }}>
-                <form onSubmit={markManual} style={{ border: '1px solid #444', padding: '1rem' }}>
-                    <h4>Manual Mark</h4>
-                    <input type="number" placeholder="User ID" value={manual.user_id} onChange={e => setManual({ ...manual, user_id: e.target.value })} required />
-                    <select value={manual.status} onChange={e => setManual({ ...manual, status: e.target.value })}>
-                        <option>Present</option>
-                        <option>Absent</option>
-                        <option>Late</option>
-                    </select>
-                    <button type="submit">Mark</button>
-                </form>
+            <h3>📋 Attendance Sheet</h3>
 
-                <form onSubmit={markBarcode} style={{ border: '1px solid #444', padding: '1rem' }}>
-                    <h4>Barcode Scanner</h4>
-                    <input placeholder="Scan Barcode (User ID)" value={barcode} onChange={e => setBarcode(e.target.value)} autoFocus />
-                    <button type="submit">Simulate Scan</button>
-                </form>
+            {/* Check-in Section */}
+            <div style={{ marginBottom: '2rem', padding: '1.5rem', background: 'rgba(102, 126, 234, 0.1)', border: '1px solid rgba(102, 126, 234, 0.2)', borderRadius: '12px' }}>
+                <h4 style={{ marginBottom: '1rem' }}>Check-In Staff</h4>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <select
+                        value={selectedStaffId}
+                        onChange={e => setSelectedStaffId(e.target.value)}
+                        style={{ flex: 1 }}
+                    >
+                        <option value="">-- Select Staff --</option>
+                        {staff.map(s => (
+                            <option key={s.id} value={s.id}>{s.username} (ID: {s.id})</option>
+                        ))}
+                    </select>
+                    <button onClick={handleCheckIn} style={{ width: 'auto', padding: '0.75rem 2rem' }}>
+                        ✓ Check In
+                    </button>
+                </div>
             </div>
 
-            <h4>Records</h4>
-            <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                {attendance.map(a => (
-                    <div key={a.id}>ID: {a.user_id} | {a.status} | {new Date(a.date).toLocaleString()} | By: {a.marked_by}</div>
-                ))}
+            {/* Attendance Table */}
+            <div style={{ overflowX: 'auto', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', padding: '1rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                        <tr style={{ borderBottom: '2px solid rgba(102, 126, 234, 0.5)' }}>
+                            <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Staff ID</th>
+                            <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Name</th>
+                            <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Date</th>
+                            <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600', color: '#4facfe' }}>IN Time</th>
+                            <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600', color: '#f5576c' }}>OUT Time</th>
+                            <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Status</th>
+                            <th style={{ padding: '1rem', textAlign: 'left', fontWeight: '600' }}>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {attendance.map(a => {
+                            const staffMember = staff.find(s => s.id === a.user_id);
+                            const dateObj = new Date(a.date);
+                            const checkInTime = a.check_in_time ? new Date(a.check_in_time) : null;
+                            const checkOutTime = a.check_out_time ? new Date(a.check_out_time) : null;
+
+                            return (
+                                <tr key={a.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', transition: 'background 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                    <td style={{ padding: '1rem' }}>{a.user_id}</td>
+                                    <td style={{ padding: '1rem', fontWeight: '500' }}>{staffMember?.username || 'Unknown'}</td>
+                                    <td style={{ padding: '1rem' }}>{dateObj.toLocaleDateString('en-GB')}</td>
+                                    <td style={{ padding: '1rem', color: '#4facfe', fontWeight: '500' }}>
+                                        {checkInTime ? checkInTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                    </td>
+                                    <td style={{ padding: '1rem', color: '#f5576c', fontWeight: '500' }}>
+                                        {checkOutTime ? checkOutTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                    </td>
+                                    <td style={{ padding: '1rem' }}>
+                                        <span style={{
+                                            padding: '0.35rem 0.85rem',
+                                            borderRadius: '20px',
+                                            background: a.status === 'Present' ? 'rgba(79, 172, 254, 0.2)' :
+                                                a.status === 'Late' ? 'rgba(245, 87, 108, 0.2)' :
+                                                    'rgba(160, 174, 192, 0.2)',
+                                            border: `1px solid ${a.status === 'Present' ? 'rgba(79, 172, 254, 0.4)' :
+                                                a.status === 'Late' ? 'rgba(245, 87, 108, 0.4)' :
+                                                    'rgba(160, 174, 192, 0.4)'}`,
+                                            fontSize: '0.85rem',
+                                            fontWeight: '500'
+                                        }}>
+                                            {a.status}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '1rem' }}>
+                                        {!checkOutTime ? (
+                                            <button
+                                                onClick={() => handleCheckOut(a.id)}
+                                                style={{
+                                                    width: 'auto',
+                                                    padding: '0.5rem 1.25rem',
+                                                    fontSize: '0.875rem',
+                                                    background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                                                    boxShadow: '0 4px 10px rgba(245, 87, 108, 0.3)'
+                                                }}
+                                            >
+                                                Check Out
+                                            </button>
+                                        ) : (
+                                            <span style={{ color: 'rgba(160, 174, 192, 0.6)', fontSize: '0.875rem' }}>✓ Completed</span>
+                                        )}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                {attendance.length === 0 && (
+                    <p style={{ textAlign: 'center', padding: '3rem', color: 'rgba(160, 174, 192, 0.6)', fontSize: '1rem' }}>
+                        No attendance records yet. Check in your first staff member above! 👆
+                    </p>
+                )}
             </div>
         </div>
     )
