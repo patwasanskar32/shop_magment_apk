@@ -9,6 +9,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backend import models, database
 from backend.routers import auth, staff, attendance, messages
 
+# Drop all tables and recreate (this will update schema with new columns)
+models.Base.metadata.drop_all(bind=database.engine)
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(title="Attendance System API", version="1.0.0")
