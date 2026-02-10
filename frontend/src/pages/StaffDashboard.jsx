@@ -39,7 +39,7 @@ const MyAttendance = ({ token }) => {
     useEffect(() => {
         const fetchAttendance = async () => {
             try {
-                const res = await axios.get(`${API_BASE_URL}/attendance/my`, {
+                const res = await axios.get(`${API_BASE_URL}/attendance/my-attendance`, {
                     headers: { Authorization: `Bearer ${token}` }
                 })
                 setAttendance(res.data)
