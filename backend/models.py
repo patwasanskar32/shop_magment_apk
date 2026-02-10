@@ -42,6 +42,8 @@ class Attendance(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     organization_id = Column(Integer, ForeignKey("organizations.id"))
     date = Column(DateTime, default=datetime.utcnow)
+    check_in_time = Column(DateTime, nullable=True)
+    check_out_time = Column(DateTime, nullable=True)
     status = Column(String) # Present, Absent, Late
     barcode_id = Column(String, nullable=True)
     marked_by = Column(String) # "manual" or "barcode_id"

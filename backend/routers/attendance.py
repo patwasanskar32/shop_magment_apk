@@ -9,6 +9,69 @@ router = APIRouter(
     tags=["attendance"]
 )
 
+@router.post("/check-in", response_model=schemas.AttendanceResponse)
+def check_in(
+    user_id: int,
+    current_user: models.User = Depends(auth.get_current_active_owner),
+    db: Session = Depends(database.get_db)
+):
+    """Mark staff check-in time"""
+    # Check if user exists and belongs to owner's organization
+    user = db.query(models.User).filter(
+        models.User.id == user_id,
+        models.User.organization_id == current_user.organization_id
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Staff not found in your organization")
+    
+    # Check if already checked in today
+    today = date.today()
+    existing = db.query(models.Attendance).filter(
+        models.Attendance.user_id == user_id,
+        models.Attendance.organization_id == current_user.organization_id,
+        models.Attendance.date >= datetime(today.year, today.month, today.day)
+    ).first()
+    
+    if existing and existing.check_in_time:
+        raise HTTPException(status_code=400, detail="Already checked in today")
+    
+    now = datetime.utcnow()
+    db_attendance = models.Attendance(
+        user_id=user_id,
+        organization_id=current_user.organization_id,
+        date=now,
+        check_in_time=now,
+        status="Present",
+        marked_by="manual"
+    )
+    db.add(db_attendance)
+    db.commit()
+    db.refresh(db_attendance)
+    return db_attendance
+
+@router.post("/check-out/{attendance_id}", response_model=schemas.AttendanceResponse)
+def check_out(
+    attendance_id: int,
+    current_user: models.User = Depends(auth.get_current_active_owner),
+    db: Session = Depends(database.get_db)
+):
+    """Mark staff check-out time"""
+    attendance = db.query(models.Attendance).filter(
+        models.Attendance.id == attendance_id,
+        models.Attendance.organization_id == current_user.organization_id
+    ).first()
+    
+    if not attendance:
+        raise HTTPException(status_code=404, detail="Attendance record not found")
+    
+    if attendance.check_out_time:
+        raise HTTPException(status_code=400, detail="Already checked out")
+    
+    attendance.check_out_time = datetime.utcnow()
+    db.commit()
+    db.refresh(attendance)
+    return attendance
+
 @router.post("/mark", response_model=schemas.AttendanceResponse)
 def mark_attendance(
     attendance: schemas.AttendanceCreate,
@@ -23,11 +86,13 @@ def mark_attendance(
     if not user:
         raise HTTPException(status_code=404, detail="User not found in your organization")
     
+    now = datetime.utcnow()
     db_attendance = models.Attendance(
         user_id=attendance.user_id,
         organization_id=current_user.organization_id,
         status=attendance.status,
-        date=datetime.utcnow(),
+        date=now,
+        check_in_time=now if attendance.status in ["Present", "Late"] else None,
         marked_by="manual"
     )
     db.add(db_attendance)
@@ -45,37 +110,29 @@ def mark_attendance_barcode(
     if not barcode_id:
         raise HTTPException(status_code=400, detail="Barcode is required")
     
-    # Assuming barcode is the User ID for simplicity as per requirement "Staff ID (auto generate)"
+    # Assuming barcode is the User ID for simplicity
     try:
         user_id = int(barcode_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid barcode format")
-
+    
+    # Find user by ID in owner's organization
     user = db.query(models.User).filter(
         models.User.id == user_id,
         models.User.organization_id == current_user.organization_id
     ).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Staff not found in your organization")
-
-    # Check if already marked for today
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    existing = db.query(models.Attendance).filter(
-        models.Attendance.user_id == user_id,
-        models.Attendance.organization_id == current_user.organization_id,
-        models.Attendance.date >= today_start
-    ).first()
     
-    if existing:
-        return existing # Already marked
-
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found in your organization with this barcode")
+    
+    now = datetime.utcnow()
     db_attendance = models.Attendance(
-        user_id=user_id,
+        user_id=user.id,
         organization_id=current_user.organization_id,
         status="Present",
-        date=datetime.utcnow(),
-        barcode_id=str(barcode_id),
-        marked_by="barcode"
+        date=now,
+        check_in_time=now,
+        marked_by=f"barcode:{barcode_id}"
     )
     db.add(db_attendance)
     db.commit()
@@ -84,24 +141,23 @@ def mark_attendance_barcode(
 
 @router.get("/all", response_model=List[schemas.AttendanceResponse])
 def get_all_attendance(
-    skip: int = 0, limit: int = 100, 
-    user_id: Optional[int] = None,
     current_user: models.User = Depends(auth.get_current_active_owner),
     db: Session = Depends(database.get_db)
 ):
-    query = db.query(models.Attendance).filter(
+    # Filter attendance by organization
+    attendance_records = db.query(models.Attendance).filter(
         models.Attendance.organization_id == current_user.organization_id
-    )
-    if user_id:
-        query = query.filter(models.Attendance.user_id == user_id)
-    return query.offset(skip).limit(limit).all()
+    ).order_by(models.Attendance.date.desc()).all()
+    return attendance_records
 
-@router.get("/my", response_model=List[schemas.AttendanceResponse])
+@router.get("/my-attendance", response_model=List[schemas.AttendanceResponse])
 def get_my_attendance(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(database.get_db)
 ):
-    return db.query(models.Attendance).filter(
+    # Staff can only see their own attendance within their organization
+    attendance_records = db.query(models.Attendance).filter(
         models.Attendance.user_id == current_user.id,
         models.Attendance.organization_id == current_user.organization_id
-    ).all()
+    ).order_by(models.Attendance.date.desc()).all()
+    return attendance_records

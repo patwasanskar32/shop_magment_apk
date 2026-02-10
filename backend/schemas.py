@@ -35,6 +35,8 @@ class AttendanceResponse(AttendanceBase):
     id: int
     user_id: int
     date: datetime
+    check_in_time: Optional[datetime] = None
+    check_out_time: Optional[datetime] = None
     marked_by: str
     class Config:
         from_attributes = True
