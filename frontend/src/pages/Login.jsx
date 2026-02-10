@@ -48,6 +48,11 @@ const Login = () => {
                 />
                 {error && <p style={{ color: 'red' }}>{error}</p>}
                 <button type="submit">Login</button>
+
+                <Link to="/forgot-password" style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '0.9rem', color: 'rgba(102, 126, 234, 0.8)' }}>
+                    Forgot Password?
+                </Link>
+
                 <Link to="/register" style={{ textAlign: 'center', marginTop: '0.5rem' }}>
                     Don't have an account? Register your organization
                 </Link>

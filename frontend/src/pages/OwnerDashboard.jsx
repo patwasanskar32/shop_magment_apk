@@ -38,6 +38,8 @@ const OwnerDashboard = () => {
 const StaffManager = ({ token }) => {
     const [staff, setStaff] = useState([])
     const [newStaff, setNewStaff] = useState({ username: '', password: '' })
+    const [resetPassword, setResetPassword] = useState({ username: '', newPassword: '' })
+    const [showResetForm, setShowResetForm] = useState(false)
 
     const fetchStaff = async () => {
         try {
@@ -71,14 +73,85 @@ const StaffManager = ({ token }) => {
         } catch (e) { alert('Error deleting staff') }
     }
 
+    const handleResetPassword = async (e) => {
+        e.preventDefault()
+        try {
+            await axios.post(`${API_BASE_URL}/auth/reset-password`, {
+                username: resetPassword.username,
+                new_password: resetPassword.newPassword
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            })
+            alert(`✅ Password reset successfully for ${resetPassword.username}!`)
+            setResetPassword({ username: '', newPassword: '' })
+            setShowResetForm(false)
+        } catch (e) {
+            alert(e.response?.data?.detail || 'Error resetting password')
+        }
+    }
+
     return (
         <div>
             <h3>Staff Management</h3>
+
+            {/* Add Staff Form */}
             <form onSubmit={addStaff} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
                 <input placeholder="Username" value={newStaff.username} onChange={e => setNewStaff({ ...newStaff, username: e.target.value })} required />
-                <input placeholder="Password" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} required />
+                <input placeholder="Password" type="password" value={newStaff.password} onChange={e => setNewStaff({ ...newStaff, password: e.target.value })} required />
                 <button type="submit">Add Staff</button>
             </form>
+
+            {/* Password Reset Toggle */}
+            <div style={{ marginBottom: '1rem' }}>
+                <button
+                    onClick={() => setShowResetForm(!showResetForm)}
+                    style={{
+                        background: showResetForm ? 'rgba(245, 87, 108, 0.2)' : 'rgba(102, 126, 234, 0.2)',
+                        border: showResetForm ? '1px solid rgba(245, 87, 108, 0.4)' : '1px solid rgba(102, 126, 234, 0.4)',
+                        padding: '0.5rem 1rem'
+                    }}
+                >
+                    {showResetForm ? '✕ Cancel' : '🔐 Reset Staff Password'}
+                </button>
+            </div>
+
+            {/* Password Reset Form */}
+            {showResetForm && (
+                <form onSubmit={handleResetPassword} style={{
+                    display: 'flex',
+                    gap: '0.5rem',
+                    marginBottom: '1.5rem',
+                    padding: '1rem',
+                    background: 'rgba(102, 126, 234, 0.1)',
+                    border: '1px solid rgba(102, 126, 234, 0.2)',
+                    borderRadius: '8px'
+                }}>
+                    <select
+                        value={resetPassword.username}
+                        onChange={e => setResetPassword({ ...resetPassword, username: e.target.value })}
+                        required
+                        style={{ flex: 1 }}
+                    >
+                        <option value="">-- Select Staff --</option>
+                        {staff.map(s => (
+                            <option key={s.id} value={s.username}>{s.username} (ID: {s.id})</option>
+                        ))}
+                    </select>
+                    <input
+                        placeholder="New Password"
+                        type="password"
+                        value={resetPassword.newPassword}
+                        onChange={e => setResetPassword({ ...resetPassword, newPassword: e.target.value })}
+                        required
+                        style={{ flex: 1 }}
+                    />
+                    <button type="submit" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                        Reset Password
+                    </button>
+                </form>
+            )}
+
+            {/* Staff List */}
             <ul>
                 {staff.map(s => (
                     <li key={s.id} style={{ display: 'flex', justifyContent: 'space-between', maxWidth: '400px' }}>
