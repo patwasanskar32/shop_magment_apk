@@ -12,6 +12,7 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: int
     organization_id: Optional[int] = None
+    barcode: Optional[str] = None  # For ID card
     created_at: datetime
     class Config:
         from_attributes = True

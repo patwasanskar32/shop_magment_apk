@@ -27,6 +27,7 @@ class User(Base):
     username = Column(String, unique=True, index=True)
     password_hash = Column(String)
     role = Column(String, default=UserRole.STAFF)
+    barcode = Column(String, unique=True, index=True, nullable=True)  # For attendance scanning
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -3,15 +3,30 @@ import axios from 'axios'
 import { AuthContext } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import API_BASE_URL from '../config'
+import StaffIDCard from '../components/StaffIDCard'
 
 const StaffDashboard = () => {
     const { user, logout } = useContext(AuthContext)
     const navigate = useNavigate()
     const [activeTab, setActiveTab] = useState('attendance')
+    const [staffData, setStaffData] = useState(null)
 
     useEffect(() => {
         if (!user) navigate('/login')
+        else fetchStaffData()
     }, [user, navigate])
+
+    const fetchStaffData = async () => {
+        try {
+            const res = await axios.get(`${API_BASE_URL}/staff/all`, {
+                headers: { Authorization: `Bearer ${user?.token}` }
+            })
+            const currentStaff = res.data.find(s => s.username === user.username)
+            setStaffData(currentStaff || user)
+        } catch (e) {
+            setStaffData(user)
+        }
+    }
 
     return (
         <div style={{ textAlign: 'left', padding: '2rem' }}>
@@ -22,11 +37,13 @@ const StaffDashboard = () => {
 
             <div style={{ display: 'flex', gap: '1rem', margin: '1rem 0' }}>
                 <button onClick={() => setActiveTab('attendance')} disabled={activeTab === 'attendance'}>My Attendance</button>
+                <button onClick={() => setActiveTab('idcard')} disabled={activeTab === 'idcard'}>My ID Card</button>
                 <button onClick={() => setActiveTab('messages')} disabled={activeTab === 'messages'}>Messages</button>
             </div>
 
             <div className="card">
                 {activeTab === 'attendance' && <MyAttendance token={user?.token} />}
+                {activeTab === 'idcard' && <StaffIDCard staff={staffData} organization={user?.organization_name || 'Organization'} />}
                 {activeTab === 'messages' && <MyMessages token={user?.token} />}
             </div>
         </div>
