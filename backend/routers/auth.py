@@ -56,24 +56,12 @@ def register_owner(request: schemas.RegisterOwnerRequest, db: Session = Depends(
     
     # Create the owner account first (without organization_id)
     hashed_password = auth.get_password_hash(request.password)
-    
-    # Try to create with barcode support, fallback to without if column doesn't exist
-    try:
-        new_owner = models.User(
-            username=request.username,
-            password_hash=hashed_password,
-            role="owner",
-            barcode=None,  # Owner doesn't need barcode initially
-            organization_id=None  # Will be set after organization is created
-        )
-    except:
-        # Fallback if barcode column doesn't exist in database
-        new_owner = models.User(
-            username=request.username,
-            password_hash=hashed_password,
-            role="owner",
-            organization_id=None  # Will be set after organization is created
-        )
+    new_owner = models.User(
+        username=request.username,
+        password_hash=hashed_password,
+        role="owner",
+        organization_id=None  # Will be set after organization is created
+    )
     
     db.add(new_owner)
     db.flush()  # Get the owner ID without committing
