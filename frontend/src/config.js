@@ -1,4 +1,4 @@
-// API configuration - centralized API URL management
-const API_BASE_URL = 'http://localhost:8000';
+// API configuration - uses env variable in production, localhost in development
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export default API_BASE_URL;
