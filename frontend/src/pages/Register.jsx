@@ -5,71 +5,99 @@ import API_BASE_URL from '../config'
 
 const sleep = (ms) => new Promise(res => setTimeout(res, ms))
 
-const Register = () => {
-    const [username, setUsername] = useState('')
-    const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
-    const [confirmPassword, setConfirmPassword] = useState('')
-    const [organizationName, setOrganizationName] = useState('')
+/**
+ * Ping /health using no-cors mode (bypasses CORS entirely).
+ * Returns true if server is awake (any response), false if unreachable.
+ */
+async function pingServer() {
+    try {
+        // no-cors: CORS headers not required; we just care if the server responds at all
+        await fetch(`${API_BASE_URL}/health`, { mode: 'no-cors', cache: 'no-store' })
+        return true   // server responded (opaque response is fine)
+    } catch {
+        return false  // ERR_NETWORK = server still sleeping
+    }
+}
+
+/**
+ * Poll /health until server wakes up (max 90 seconds).
+ * Calls onTick(secondsWaited) every second for UI updates.
+ */
+async function waitForServer(onTick) {
+    const MAX = 90
+    let waited = 0
+    const interval = setInterval(() => { waited++; onTick(waited) }, 1000)
+    try {
+        while (waited < MAX) {
+            if (await pingServer()) return true
+            await sleep(6000) // retry every 6s
+        }
+        return false
+    } finally {
+        clearInterval(interval)
+    }
+}
+
+export default function Register() {
+    const [form, setForm] = useState({ org: '', username: '', email: '', password: '', confirm: '' })
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
-    const [elapsed, setElapsed] = useState(0)   // seconds waited
-    const [phase, setPhase] = useState('')       // 'waking' | 'submitting' | ''
+    const [seconds, setSeconds] = useState(0)
+    const [phase, setPhase] = useState('') // 'pinging' | 'waking' | 'submitting'
     const navigate = useNavigate()
+
+    const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
 
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
-        setElapsed(0)
+        setSeconds(0)
         setPhase('')
 
-        if (!username || !email || !password || !confirmPassword || !organizationName) {
-            setError('All fields are required'); return
-        }
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            setError('Please enter a valid email address'); return
-        }
-        if (password !== confirmPassword) {
-            setError('Passwords do not match'); return
-        }
-        if (password.length < 6) {
-            setError('Password must be at least 6 characters'); return
-        }
+        const { org, username, email, password, confirm } = form
+        if (!org || !username || !email || !password || !confirm) { setError('All fields are required'); return }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('Please enter a valid email address'); return }
+        if (password !== confirm) { setError('Passwords do not match'); return }
+        if (password.length < 6) { setError('Password must be at least 6 characters'); return }
 
         setLoading(true)
+        setPhase('pinging')
 
-        // Try to register. If the server is cold-starting, Render queues the request
-        // and responds once it's ready (can take 30–60s). We just set a long timeout.
-        let tick = 0
-        const timer = setInterval(() => {
-            tick += 1
-            setElapsed(tick)
-            if (tick === 3) setPhase('waking')   // after 3s assume server is waking
-        }, 1000)
+        // Step 1: Quick check if server is already awake
+        const alreadyUp = await pingServer()
 
+        if (!alreadyUp) {
+            // Step 2: Server sleeping — wait for it to wake up
+            setPhase('waking')
+            const woke = await waitForServer(setSeconds)
+            if (!woke) {
+                setError('❌ Server is taking too long to start. Please tap the button again in a few seconds.')
+                setLoading(false)
+                setPhase('')
+                return
+            }
+        }
+
+        // Step 3: Server is awake — submit registration
+        setPhase('submitting')
         try {
-            setPhase('submitting')
-            const res = await axios.post(
-                `${API_BASE_URL}/auth/register-owner`,
-                { username, email, password, organization_name: organizationName },
-                { timeout: 90000 }  // 90 second timeout — covers worst Render cold start
-            )
-            clearInterval(timer)
+            await axios.post(`${API_BASE_URL}/auth/register-owner`, {
+                username,
+                email,
+                password,
+                organization_name: org
+            }, { timeout: 20000 })
+
             setPhase('')
             alert('✅ Account created! Please check your email to verify your address.')
             navigate('/login')
 
         } catch (err) {
-            clearInterval(timer)
             setPhase('')
-            if (err.code === 'ECONNABORTED') {
-                setError('❌ Server is taking too long. Please try again — it should be faster now.')
-            } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
-                setError('❌ Cannot reach server. Check your internet or try again in 30 seconds.')
-            } else if (err.response?.data?.detail) {
+            if (err.response?.data?.detail) {
                 setError('❌ ' + err.response.data.detail)
             } else if (err.response?.status === 422) {
-                setError('❌ Invalid data. Please check all fields.')
+                setError('❌ Invalid data. Check all fields.')
             } else {
                 setError('❌ ' + (err.message || 'Registration failed. Please try again.'))
             }
@@ -85,7 +113,11 @@ const Register = () => {
         fontSize: '0.95rem', outline: 'none', width: '100%', boxSizing: 'border-box'
     }
 
-    const isWaking = phase === 'waking' && elapsed >= 3
+    const statusText = {
+        pinging: '🔌 Connecting to server...',
+        waking: `⏳ Waking up server... ${seconds}s (please wait up to 90s)`,
+        submitting: '✅ Server ready — creating your account...',
+    }[phase] || ''
 
     return (
         <div style={{ minHeight: '100vh', background: '#0a0a14', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter','Segoe UI',sans-serif", padding: '2rem' }}>
@@ -97,41 +129,27 @@ const Register = () => {
                 </div>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                    <input type="text" placeholder="Organization Name" value={organizationName}
-                        onChange={e => setOrganizationName(e.target.value)} style={inputStyle} disabled={loading} />
-                    <input type="text" placeholder="Username" value={username}
-                        onChange={e => setUsername(e.target.value)} style={inputStyle} disabled={loading} />
-                    <input type="email" placeholder="Email address" value={email}
-                        onChange={e => setEmail(e.target.value)} style={inputStyle} disabled={loading} />
-                    <input type="password" placeholder="Password (min 6 chars)" value={password}
-                        onChange={e => setPassword(e.target.value)} style={inputStyle} disabled={loading} />
-                    <input type="password" placeholder="Confirm Password" value={confirmPassword}
-                        onChange={e => setConfirmPassword(e.target.value)} style={inputStyle} disabled={loading} />
+                    <input type="text" placeholder="Organization Name" value={form.org} onChange={set('org')} style={inputStyle} disabled={loading} />
+                    <input type="text" placeholder="Username" value={form.username} onChange={set('username')} style={inputStyle} disabled={loading} />
+                    <input type="email" placeholder="Email address" value={form.email} onChange={set('email')} style={inputStyle} disabled={loading} />
+                    <input type="password" placeholder="Password (min 6 chars)" value={form.password} onChange={set('password')} style={inputStyle} disabled={loading} />
+                    <input type="password" placeholder="Confirm Password" value={form.confirm} onChange={set('confirm')} style={inputStyle} disabled={loading} />
 
-                    {/* Status bar while loading */}
-                    {loading && (
+                    {statusText && (
                         <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 8, padding: '0.75rem 0.9rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#93c5fd', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
-                                <span>{isWaking ? '⏳ Waking up server...' : '🔌 Connecting...'}</span>
-                                {elapsed > 0 && <span>{elapsed}s</span>}
+                            <div style={{ color: '#93c5fd', fontSize: '0.875rem', marginBottom: phase === 'waking' ? '0.5rem' : 0 }}>
+                                {statusText}
                             </div>
-                            {/* Animated progress bar */}
-                            <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-                                <div style={{
-                                    height: '100%', borderRadius: 2,
-                                    background: 'linear-gradient(90deg,#667eea,#f093fb,#667eea)',
-                                    backgroundSize: '200% 100%',
-                                    animation: 'shimmer 2s linear infinite',
-                                    width: `${Math.min(100, (elapsed / 60) * 100)}%`,
-                                    transition: 'width 1s linear'
-                                }} />
-                            </div>
-                            {isWaking && (
-                                <p style={{ margin: '0.4rem 0 0', color: 'rgba(255,255,255,0.35)', fontSize: '0.75rem' }}>
-                                    Free servers sleep when idle — please wait up to 60s
-                                </p>
+                            {phase === 'waking' && (
+                                <>
+                                    <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', background: 'linear-gradient(90deg,#667eea,#f093fb)', width: `${Math.min(100, (seconds / 90) * 100)}%`, transition: 'width 1s linear', borderRadius: 2 }} />
+                                    </div>
+                                    <p style={{ margin: '0.4rem 0 0', color: 'rgba(255,255,255,0.35)', fontSize: '0.72rem' }}>
+                                        Free tier servers sleep after 15 min of inactivity
+                                    </p>
+                                </>
                             )}
-                            <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
                         </div>
                     )}
 
@@ -142,7 +160,8 @@ const Register = () => {
                     )}
 
                     <button type="submit" disabled={loading} style={{
-                        padding: '0.8rem', borderRadius: 10, border: 'none', color: 'white', fontWeight: 700, fontSize: '0.98rem', marginTop: '0.3rem',
+                        padding: '0.8rem', borderRadius: 10, border: 'none', color: 'white',
+                        fontWeight: 700, fontSize: '0.98rem', marginTop: '0.3rem',
                         background: loading ? 'rgba(102,126,234,0.4)' : 'linear-gradient(135deg,#667eea,#764ba2)',
                         cursor: loading ? 'not-allowed' : 'pointer'
                     }}>
@@ -158,5 +177,3 @@ const Register = () => {
         </div>
     )
 }
-
-export default Register
