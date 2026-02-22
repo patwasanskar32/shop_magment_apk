@@ -3,32 +3,54 @@ import axios from 'axios'
 import { AuthContext } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
 import API_BASE_URL from '../config'
+import HRManager from '../components/HRManager'
+import POSManager from '../components/POSManager'
+import AnalyticsManager from '../components/AnalyticsManager'
+
+const TABS = [
+    { id: 'analytics', label: '📊 Analytics' },
+    { id: 'staff', label: '👥 Staff' },
+    { id: 'attendance', label: '📅 Attendance' },
+    { id: 'hr', label: '💰 HR & Payroll' },
+    { id: 'pos', label: '🛍️ POS' },
+    { id: 'messages', label: '💬 Messages' },
+]
 
 const OwnerDashboard = () => {
     const { user, logout } = useContext(AuthContext)
     const navigate = useNavigate()
-    const [activeTab, setActiveTab] = useState('staff')
+    const [activeTab, setActiveTab] = useState('analytics')
 
     useEffect(() => {
         if (!user) navigate('/login')
     }, [user, navigate])
 
     return (
-        <div style={{ textAlign: 'left', padding: '2rem' }}>
-            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2>Owner Dashboard</h2>
-                <button onClick={logout}>Logout</button>
+        <div style={{ textAlign: 'left', padding: '2rem', minHeight: '100vh', background: '#0f0f1a' }}>
+            <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <div>
+                    <h2 style={{ margin: 0, background: 'linear-gradient(135deg,#667eea,#f093fb)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '1.75rem' }}>🏢 Shop ERP</h2>
+                    <p style={{ margin: 0, color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>Welcome, {user?.username}</p>
+                </div>
+                <button onClick={logout} style={{ padding: '0.5rem 1.2rem', borderRadius: 8, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', cursor: 'pointer', fontWeight: 600 }}>Logout</button>
             </header>
 
-            <div style={{ display: 'flex', gap: '1rem', margin: '1rem 0' }}>
-                <button onClick={() => setActiveTab('staff')} disabled={activeTab === 'staff'}>Staff</button>
-                <button onClick={() => setActiveTab('attendance')} disabled={activeTab === 'attendance'}>Attendance</button>
-                <button onClick={() => setActiveTab('messages')} disabled={activeTab === 'messages'}>Messages</button>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+                {TABS.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+                        padding: '0.6rem 1.1rem', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all 0.2s',
+                        background: activeTab === tab.id ? 'linear-gradient(135deg,#667eea,#764ba2)' : 'rgba(255,255,255,0.07)',
+                        color: 'white', boxShadow: activeTab === tab.id ? '0 4px 15px rgba(102,126,234,0.3)' : 'none'
+                    }}>{tab.label}</button>
+                ))}
             </div>
 
-            <div className="card">
+            <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 16, padding: '1.5rem', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {activeTab === 'analytics' && <AnalyticsManager token={user?.token} />}
                 {activeTab === 'staff' && <StaffManager token={user?.token} />}
                 {activeTab === 'attendance' && <AttendanceManager token={user?.token} />}
+                {activeTab === 'hr' && <HRManager token={user?.token} />}
+                {activeTab === 'pos' && <POSManager token={user?.token} />}
                 {activeTab === 'messages' && <MessageManager token={user?.token} />}
             </div>
         </div>

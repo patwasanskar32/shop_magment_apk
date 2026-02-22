@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
@@ -12,7 +12,7 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     id: int
     organization_id: Optional[int] = None
-    barcode: Optional[str] = None  # For ID card
+    barcode: Optional[str] = None
     created_at: datetime
     class Config:
         from_attributes = True
@@ -57,16 +57,14 @@ class MessageResponse(MessageBase):
     class Config:
         from_attributes = True
 
-# Owner Registration Schemas
 class RegisterOwnerRequest(BaseModel):
     username: str
     password: str
-    organization_name: str  # New: organization name
+    organization_name: str
 
 class OwnerExistsResponse(BaseModel):
     owner_exists: bool
 
-# Organization Schemas
 class OrganizationResponse(BaseModel):
     id: int
     name: str
@@ -75,7 +73,6 @@ class OrganizationResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# Password Reset Schemas
 class PasswordResetRequest(BaseModel):
     username: str
     new_password: str
@@ -84,3 +81,122 @@ class PasswordResetResponse(BaseModel):
     message: str
     username: str
 
+# ─── HR & PAYROLL SCHEMAS ────────────────────────────────────────────────────
+
+class SalaryCreate(BaseModel):
+    user_id: int
+    base_salary: float
+    currency: str = "INR"
+
+class SalaryResponse(BaseModel):
+    id: int
+    user_id: int
+    base_salary: float
+    currency: str
+    effective_from: datetime
+    class Config:
+        from_attributes = True
+
+class LeaveCreate(BaseModel):
+    leave_type: str   # sick, casual, annual
+    start_date: datetime
+    end_date: datetime
+    reason: Optional[str] = None
+
+class LeaveResponse(BaseModel):
+    id: int
+    user_id: int
+    leave_type: str
+    start_date: datetime
+    end_date: datetime
+    reason: Optional[str] = None
+    status: str
+    applied_at: datetime
+    class Config:
+        from_attributes = True
+
+class LeaveStatusUpdate(BaseModel):
+    status: str   # approved or rejected
+
+class PayslipResponse(BaseModel):
+    id: int
+    user_id: int
+    month: int
+    year: int
+    base_salary: float
+    days_present: int
+    days_absent: int
+    days_late: int
+    deductions: float
+    net_salary: float
+    generated_at: datetime
+    class Config:
+        from_attributes = True
+
+# ─── POS SCHEMAS ─────────────────────────────────────────────────────────────
+
+class ProductCreate(BaseModel):
+    name: str
+    sku: Optional[str] = None
+    category: Optional[str] = None
+    price: float
+    cost: Optional[float] = None
+    stock: int = 0
+    unit: str = "pcs"
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    sku: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    cost: Optional[float] = None
+    stock: Optional[int] = None
+    unit: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class ProductResponse(BaseModel):
+    id: int
+    name: str
+    sku: Optional[str] = None
+    category: Optional[str] = None
+    price: float
+    cost: Optional[float] = None
+    stock: int
+    unit: str
+    is_active: bool
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+class SaleItemCreate(BaseModel):
+    product_id: int
+    quantity: int
+
+class SaleCreate(BaseModel):
+    customer_name: Optional[str] = "Walk-in"
+    items: List[SaleItemCreate]
+    discount: float = 0.0
+    tax: float = 0.0
+    payment_method: str = "cash"
+
+class SaleItemResponse(BaseModel):
+    id: int
+    product_id: int
+    quantity: int
+    unit_price: float
+    subtotal: float
+    class Config:
+        from_attributes = True
+
+class SaleResponse(BaseModel):
+    id: int
+    customer_name: Optional[str]
+    subtotal: float
+    discount: float
+    tax: float
+    total: float
+    payment_method: str
+    created_at: datetime
+    items: List[SaleItemResponse] = []
+    class Config:
+        from_attributes = True

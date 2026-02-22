@@ -7,8 +7,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend import models, database
-from backend.routers import auth, staff, attendance, messages
-import os
+from backend.routers import auth, staff, attendance, messages, hr, pos, analytics
 
 # Only drop/recreate in development, not in production
 if os.getenv("DATABASE_URL") and "localhost" not in os.getenv("DATABASE_URL", ""):
@@ -19,7 +18,7 @@ else:
     models.Base.metadata.drop_all(bind=database.engine)
     models.Base.metadata.create_all(bind=database.engine)
 
-app = FastAPI(title="Attendance System API", version="1.0.0")
+app = FastAPI(title="Shop ERP System API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,10 +32,13 @@ app.include_router(auth.router)
 app.include_router(staff.router)
 app.include_router(attendance.router)
 app.include_router(messages.router)
+app.include_router(hr.router)
+app.include_router(pos.router)
+app.include_router(analytics.router)
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to Attendance System API"}
+    return {"message": "Welcome to Shop ERP System API v2.0"}
 
 if __name__ == "__main__":
     import uvicorn
