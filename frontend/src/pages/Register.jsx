@@ -6,35 +6,36 @@ import API_BASE_URL from '../config'
 const sleep = (ms) => new Promise(res => setTimeout(res, ms))
 
 /**
- * Ping /health using no-cors mode (bypasses CORS entirely).
- * Returns true if server is awake (any response), false if unreachable.
- */
-async function pingServer() {
-    try {
-        // no-cors: CORS headers not required; we just care if the server responds at all
-        await fetch(`${API_BASE_URL}/health`, { mode: 'no-cors', cache: 'no-store' })
-        return true   // server responded (opaque response is fine)
-    } catch {
-        return false  // ERR_NETWORK = server still sleeping
-    }
-}
-
-/**
- * Poll /health until server wakes up (max 90 seconds).
- * Calls onTick(secondsWaited) every second for UI updates.
+ * Wait until the Render server process is truly awake.
+ * Uses axios.get('/health') — a simple GET that needs no CORS preflight.
+ * This actually hits the Render server process (NOT Cloudflare's edge),
+ * so we know the process is ready when it returns 200.
+ *
+ * Returns true when ready, false if timed out (90s max).
  */
 async function waitForServer(onTick) {
-    const MAX = 90
-    let waited = 0
-    const interval = setInterval(() => { waited++; onTick(waited) }, 1000)
+    const startAt = Date.now()
+    const MAX_MS = 90_000
+
+    const tick = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startAt) / 1000)
+        onTick(elapsed)
+    }, 1000)
+
     try {
-        while (waited < MAX) {
-            if (await pingServer()) return true
-            await sleep(6000) // retry every 6s
+        while (Date.now() - startAt < MAX_MS) {
+            try {
+                // Simple GET → no preflight, goes straight to Render process
+                await axios.get(`${API_BASE_URL}/health`, { timeout: 12000 })
+                return true  // server is genuinely awake
+            } catch {
+                // still sleeping — wait 5s and retry
+                await sleep(5000)
+            }
         }
         return false
     } finally {
-        clearInterval(interval)
+        clearInterval(tick)
     }
 }
 
@@ -43,7 +44,7 @@ export default function Register() {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [seconds, setSeconds] = useState(0)
-    const [phase, setPhase] = useState('') // 'pinging' | 'waking' | 'submitting'
+    const [phase, setPhase] = useState('') // '' | 'checking' | 'waking' | 'submitting'
     const navigate = useNavigate()
 
     const set = (field) => (e) => setForm(f => ({ ...f, [field]: e.target.value }))
@@ -61,24 +62,30 @@ export default function Register() {
         if (password.length < 6) { setError('Password must be at least 6 characters'); return }
 
         setLoading(true)
-        setPhase('pinging')
 
-        // Step 1: Quick check if server is already awake
-        const alreadyUp = await pingServer()
+        // Step 1: quick check if server is already awake (12s timeout)
+        setPhase('checking')
+        let serverReady = false
+        try {
+            await axios.get(`${API_BASE_URL}/health`, { timeout: 12000 })
+            serverReady = true
+        } catch {
+            // server sleeping — need to wait
+        }
 
-        if (!alreadyUp) {
-            // Step 2: Server sleeping — wait for it to wake up
+        if (!serverReady) {
+            // Step 2: poll until server wakes (up to 90s)
             setPhase('waking')
-            const woke = await waitForServer(setSeconds)
-            if (!woke) {
-                setError('❌ Server is taking too long to start. Please tap the button again in a few seconds.')
+            serverReady = await waitForServer(setSeconds)
+            if (!serverReady) {
+                setError('❌ Server is taking too long to start. Please try again in a moment.')
                 setLoading(false)
                 setPhase('')
                 return
             }
         }
 
-        // Step 3: Server is awake — submit registration
+        // Step 3: server is awake — submit registration
         setPhase('submitting')
         try {
             await axios.post(`${API_BASE_URL}/auth/register-owner`, {
@@ -86,7 +93,7 @@ export default function Register() {
                 email,
                 password,
                 organization_name: org
-            }, { timeout: 20000 })
+            }, { timeout: 30000 })
 
             setPhase('')
             alert('✅ Account created! Please check your email to verify your address.')
@@ -97,7 +104,9 @@ export default function Register() {
             if (err.response?.data?.detail) {
                 setError('❌ ' + err.response.data.detail)
             } else if (err.response?.status === 422) {
-                setError('❌ Invalid data. Check all fields.')
+                setError('❌ Invalid data. Check all fields and try again.')
+            } else if (err.code === 'ECONNABORTED') {
+                setError('❌ Server timed out. Please try again.')
             } else {
                 setError('❌ ' + (err.message || 'Registration failed. Please try again.'))
             }
@@ -114,9 +123,9 @@ export default function Register() {
     }
 
     const statusText = {
-        pinging: '🔌 Connecting to server...',
-        waking: `⏳ Waking up server... ${seconds}s (please wait up to 90s)`,
-        submitting: '✅ Server ready — creating your account...',
+        checking: '🔌 Checking server...',
+        waking: `⏳ Waking up server... ${seconds}s`,
+        submitting: '✅ Server ready — creating account...',
     }[phase] || ''
 
     return (
@@ -146,7 +155,7 @@ export default function Register() {
                                         <div style={{ height: '100%', background: 'linear-gradient(90deg,#667eea,#f093fb)', width: `${Math.min(100, (seconds / 90) * 100)}%`, transition: 'width 1s linear', borderRadius: 2 }} />
                                     </div>
                                     <p style={{ margin: '0.4rem 0 0', color: 'rgba(255,255,255,0.35)', fontSize: '0.72rem' }}>
-                                        Free tier servers sleep after 15 min of inactivity
+                                        Free tier servers sleep after 15 min — please wait up to 90s
                                     </p>
                                 </>
                             )}
