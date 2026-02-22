@@ -5,6 +5,24 @@ import API_BASE_URL from '../config'
 
 const sleep = (ms) => new Promise(res => setTimeout(res, ms))
 
+/** Pings /health every 5 seconds until the server responds (max 90s). 
+ *  Calls onProgress(secondsWaited) each tick. Returns true if server woke up. */
+async function waitForServer(onProgress) {
+    const deadline = Date.now() + 90_000
+    let waited = 0
+    while (Date.now() < deadline) {
+        try {
+            await axios.get(`${API_BASE_URL}/health`, { timeout: 8000 })
+            return true // server is awake
+        } catch {
+            waited += 5
+            onProgress(waited)
+            await sleep(5000)
+        }
+    }
+    return false
+}
+
 const Register = () => {
     const [username, setUsername] = useState('')
     const [email, setEmail] = useState('')
@@ -22,73 +40,63 @@ const Register = () => {
         setStatusMsg('')
 
         if (!username || !email || !password || !confirmPassword || !organizationName) {
-            setError('All fields are required')
-            return
+            setError('All fields are required'); return
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            setError('Please enter a valid email address')
-            return
+            setError('Please enter a valid email address'); return
         }
         if (password !== confirmPassword) {
-            setError('Passwords do not match')
-            return
+            setError('Passwords do not match'); return
         }
         if (password.length < 6) {
-            setError('Password must be at least 6 characters')
-            return
+            setError('Password must be at least 6 characters'); return
         }
 
         setLoading(true)
+        setStatusMsg('🔌 Connecting to server...')
 
-        // Auto-retry logic: if server is sleeping (Render cold start), retry up to 3 times
-        let attempt = 0
-        const maxAttempts = 3
-        while (attempt < maxAttempts) {
-            attempt++
-            try {
-                if (attempt > 1) {
-                    setStatusMsg(`⏳ Waking up server... (attempt ${attempt}/${maxAttempts})`)
-                    await sleep(10000) // wait 10s between retries
-                } else {
-                    setStatusMsg('Connecting to server...')
-                }
-
-                await axios.post(`${API_BASE_URL}/auth/register-owner`, {
-                    username,
-                    email,
-                    password,
-                    organization_name: organizationName
-                }, { timeout: 30000 })
-
+        // Step 1: Make sure server is awake
+        try {
+            await axios.get(`${API_BASE_URL}/health`, { timeout: 8000 })
+        } catch {
+            // Server sleeping — wait for it to wake up
+            setStatusMsg('⏳ Server is starting up (this takes ~30–60s on first use)...')
+            const woke = await waitForServer((sec) => {
+                setStatusMsg(`⏳ Waking up server... ${sec}s elapsed (please wait up to 90s)`)
+            })
+            if (!woke) {
+                setError('❌ Server took too long to start. Please try again in a moment.')
                 setStatusMsg('')
-                alert('✅ Account created! Please check your email to verify your address.')
-                navigate('/login')
+                setLoading(false)
                 return
-
-            } catch (err) {
-                const isNetworkErr = err.code === 'ERR_NETWORK' || err.code === 'ECONNABORTED' || err.message === 'Network Error'
-                if (isNetworkErr && attempt < maxAttempts) {
-                    // Will retry — loop continues
-                    continue
-                }
-
-                setStatusMsg('')
-                if (isNetworkErr) {
-                    setError('❌ Server is starting up — please wait 30 seconds and try again.')
-                } else if (err.response?.data?.detail) {
-                    setError('❌ ' + err.response.data.detail)
-                } else if (err.response?.status === 500) {
-                    setError('❌ Server error (500). Please wait and try again.')
-                } else if (err.response?.status === 422) {
-                    setError('❌ Invalid data. Please check all fields.')
-                } else {
-                    setError('❌ ' + (err.message || 'Registration failed. Please try again.'))
-                }
-                break
             }
         }
 
-        setLoading(false)
+        // Step 2: Server is awake — submit registration
+        setStatusMsg('✅ Server ready! Creating your account...')
+        try {
+            await axios.post(`${API_BASE_URL}/auth/register-owner`, {
+                username,
+                email,
+                password,
+                organization_name: organizationName
+            }, { timeout: 15000 })
+
+            setStatusMsg('')
+            alert('✅ Account created! Please check your email to verify your address.')
+            navigate('/login')
+        } catch (err) {
+            setStatusMsg('')
+            if (err.response?.data?.detail) {
+                setError('❌ ' + err.response.data.detail)
+            } else if (err.response?.status === 422) {
+                setError('❌ Invalid data. Please check all fields.')
+            } else {
+                setError('❌ ' + (err.message || 'Registration failed. Please try again.'))
+            }
+        } finally {
+            setLoading(false)
+        }
     }
 
     const inputStyle = {
@@ -120,9 +128,15 @@ const Register = () => {
                         onChange={e => setConfirmPassword(e.target.value)} style={inputStyle} disabled={loading} />
 
                     {statusMsg && (
-                        <p style={{ color: '#93c5fd', margin: 0, fontSize: '0.875rem', background: 'rgba(59,130,246,0.1)', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(59,130,246,0.25)', textAlign: 'center' }}>
+                        <div style={{ color: '#93c5fd', margin: 0, fontSize: '0.875rem', background: 'rgba(59,130,246,0.1)', padding: '0.75rem 0.8rem', borderRadius: 8, border: '1px solid rgba(59,130,246,0.25)', textAlign: 'center', lineHeight: 1.5 }}>
                             {statusMsg}
-                        </p>
+                            {statusMsg.includes('Waking') && (
+                                <div style={{ marginTop: '0.4rem', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', width: '100%', background: 'linear-gradient(90deg,#667eea,#f093fb)', animation: 'shimmer 1.5s ease infinite', backgroundSize: '200% 100%' }} />
+                                </div>
+                            )}
+                            <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+                        </div>
                     )}
 
                     {error && (
@@ -136,7 +150,7 @@ const Register = () => {
                         background: loading ? 'rgba(102,126,234,0.4)' : 'linear-gradient(135deg,#667eea,#764ba2)',
                         cursor: loading ? 'not-allowed' : 'pointer'
                     }}>
-                        {loading ? '⏳ Please wait...' : '🚀 Create Owner Account'}
+                        {loading ? 'Please wait...' : '🚀 Create Owner Account'}
                     </button>
 
                     <p style={{ textAlign: 'center', margin: '0.5rem 0 0', color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>
