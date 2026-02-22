@@ -5,24 +5,6 @@ import API_BASE_URL from '../config'
 
 const sleep = (ms) => new Promise(res => setTimeout(res, ms))
 
-/** Pings /health every 5 seconds until the server responds (max 90s). 
- *  Calls onProgress(secondsWaited) each tick. Returns true if server woke up. */
-async function waitForServer(onProgress) {
-    const deadline = Date.now() + 90_000
-    let waited = 0
-    while (Date.now() < deadline) {
-        try {
-            await axios.get(`${API_BASE_URL}/health`, { timeout: 8000 })
-            return true // server is awake
-        } catch {
-            waited += 5
-            onProgress(waited)
-            await sleep(5000)
-        }
-    }
-    return false
-}
-
 const Register = () => {
     const [username, setUsername] = useState('')
     const [email, setEmail] = useState('')
@@ -31,13 +13,15 @@ const Register = () => {
     const [organizationName, setOrganizationName] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
-    const [statusMsg, setStatusMsg] = useState('')
+    const [elapsed, setElapsed] = useState(0)   // seconds waited
+    const [phase, setPhase] = useState('')       // 'waking' | 'submitting' | ''
     const navigate = useNavigate()
 
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
-        setStatusMsg('')
+        setElapsed(0)
+        setPhase('')
 
         if (!username || !email || !password || !confirmPassword || !organizationName) {
             setError('All fields are required'); return
@@ -53,41 +37,36 @@ const Register = () => {
         }
 
         setLoading(true)
-        setStatusMsg('🔌 Connecting to server...')
 
-        // Step 1: Make sure server is awake
+        // Try to register. If the server is cold-starting, Render queues the request
+        // and responds once it's ready (can take 30–60s). We just set a long timeout.
+        let tick = 0
+        const timer = setInterval(() => {
+            tick += 1
+            setElapsed(tick)
+            if (tick === 3) setPhase('waking')   // after 3s assume server is waking
+        }, 1000)
+
         try {
-            await axios.get(`${API_BASE_URL}/health`, { timeout: 8000 })
-        } catch {
-            // Server sleeping — wait for it to wake up
-            setStatusMsg('⏳ Server is starting up (this takes ~30–60s on first use)...')
-            const woke = await waitForServer((sec) => {
-                setStatusMsg(`⏳ Waking up server... ${sec}s elapsed (please wait up to 90s)`)
-            })
-            if (!woke) {
-                setError('❌ Server took too long to start. Please try again in a moment.')
-                setStatusMsg('')
-                setLoading(false)
-                return
-            }
-        }
-
-        // Step 2: Server is awake — submit registration
-        setStatusMsg('✅ Server ready! Creating your account...')
-        try {
-            await axios.post(`${API_BASE_URL}/auth/register-owner`, {
-                username,
-                email,
-                password,
-                organization_name: organizationName
-            }, { timeout: 15000 })
-
-            setStatusMsg('')
+            setPhase('submitting')
+            const res = await axios.post(
+                `${API_BASE_URL}/auth/register-owner`,
+                { username, email, password, organization_name: organizationName },
+                { timeout: 90000 }  // 90 second timeout — covers worst Render cold start
+            )
+            clearInterval(timer)
+            setPhase('')
             alert('✅ Account created! Please check your email to verify your address.')
             navigate('/login')
+
         } catch (err) {
-            setStatusMsg('')
-            if (err.response?.data?.detail) {
+            clearInterval(timer)
+            setPhase('')
+            if (err.code === 'ECONNABORTED') {
+                setError('❌ Server is taking too long. Please try again — it should be faster now.')
+            } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+                setError('❌ Cannot reach server. Check your internet or try again in 30 seconds.')
+            } else if (err.response?.data?.detail) {
                 setError('❌ ' + err.response.data.detail)
             } else if (err.response?.status === 422) {
                 setError('❌ Invalid data. Please check all fields.')
@@ -105,6 +84,8 @@ const Register = () => {
         background: 'rgba(255,255,255,0.07)', color: 'white',
         fontSize: '0.95rem', outline: 'none', width: '100%', boxSizing: 'border-box'
     }
+
+    const isWaking = phase === 'waking' && elapsed >= 3
 
     return (
         <div style={{ minHeight: '100vh', background: '#0a0a14', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Inter','Segoe UI',sans-serif", padding: '2rem' }}>
@@ -127,13 +108,28 @@ const Register = () => {
                     <input type="password" placeholder="Confirm Password" value={confirmPassword}
                         onChange={e => setConfirmPassword(e.target.value)} style={inputStyle} disabled={loading} />
 
-                    {statusMsg && (
-                        <div style={{ color: '#93c5fd', margin: 0, fontSize: '0.875rem', background: 'rgba(59,130,246,0.1)', padding: '0.75rem 0.8rem', borderRadius: 8, border: '1px solid rgba(59,130,246,0.25)', textAlign: 'center', lineHeight: 1.5 }}>
-                            {statusMsg}
-                            {statusMsg.includes('Waking') && (
-                                <div style={{ marginTop: '0.4rem', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', width: '100%', background: 'linear-gradient(90deg,#667eea,#f093fb)', animation: 'shimmer 1.5s ease infinite', backgroundSize: '200% 100%' }} />
-                                </div>
+                    {/* Status bar while loading */}
+                    {loading && (
+                        <div style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', borderRadius: 8, padding: '0.75rem 0.9rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#93c5fd', fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+                                <span>{isWaking ? '⏳ Waking up server...' : '🔌 Connecting...'}</span>
+                                {elapsed > 0 && <span>{elapsed}s</span>}
+                            </div>
+                            {/* Animated progress bar */}
+                            <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+                                <div style={{
+                                    height: '100%', borderRadius: 2,
+                                    background: 'linear-gradient(90deg,#667eea,#f093fb,#667eea)',
+                                    backgroundSize: '200% 100%',
+                                    animation: 'shimmer 2s linear infinite',
+                                    width: `${Math.min(100, (elapsed / 60) * 100)}%`,
+                                    transition: 'width 1s linear'
+                                }} />
+                            </div>
+                            {isWaking && (
+                                <p style={{ margin: '0.4rem 0 0', color: 'rgba(255,255,255,0.35)', fontSize: '0.75rem' }}>
+                                    Free servers sleep when idle — please wait up to 60s
+                                </p>
                             )}
                             <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
                         </div>
