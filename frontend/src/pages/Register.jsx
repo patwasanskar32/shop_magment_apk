@@ -35,21 +35,25 @@ const Register = () => {
         setLoading(true)
 
         try {
-            await axios.post(`${API_BASE_URL}/auth/register-owner`, {
+            const res = await axios.post(`${API_BASE_URL}/auth/register-owner`, {
                 username,
                 password,
                 organization_name: organizationName
             })
-
-            // Registration successful, redirect to login
             alert('Owner account created successfully! Please login.')
             navigate('/login')
         } catch (err) {
-            console.error(err)
-            if (err.response?.data?.detail) {
-                setError(err.response.data.detail)
+            console.error('Registration error:', err)
+            if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+                setError('❌ Cannot connect to server. Check your internet or try again in a minute.')
+            } else if (err.response?.data?.detail) {
+                setError('❌ ' + err.response.data.detail)
+            } else if (err.response?.status === 500) {
+                setError('❌ Server error (500). The server is starting up, please wait 1 minute and try again.')
+            } else if (err.response?.status === 422) {
+                setError('❌ Invalid data. Please check all fields.')
             } else {
-                setError('Registration failed. Please try again.')
+                setError('❌ Registration failed: ' + (err.message || 'Please try again.'))
             }
         } finally {
             setLoading(false)

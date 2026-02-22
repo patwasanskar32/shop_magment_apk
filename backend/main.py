@@ -3,56 +3,60 @@ from fastapi.middleware.cors import CORSMiddleware
 import sys
 import os
 
-# Add the parent directory to sys.path to allow imports from 'backend'
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend import models, database
+from backend import database
 from backend.routers import auth, staff, attendance, messages, hr, pos, analytics
 
-def run_migrations():
-    """Safely run schema migrations for cloud database (PostgreSQL)"""
-    from sqlalchemy import text, inspect
-    with database.engine.connect() as conn:
-        inspector = inspect(database.engine)
-        
-        # Migration 1: add barcode column to users if it doesn't exist
-        cols = [c['name'] for c in inspector.get_columns('users')]
-        if 'barcode' not in cols:
-            try:
-                conn.execute(text("ALTER TABLE users ADD COLUMN barcode VARCHAR"))
-                conn.commit()
-                print("✅ Added barcode column to users")
-            except Exception as e:
-                print(f"⚠️ barcode column: {e}")
-                conn.rollback()
-
-        # Migration 2: Create all new ERP tables (salaries, leaves, payslips, products, sales, sale_items)
-        try:
-            models.Base.metadata.create_all(bind=database.engine)
-            print("✅ ERP tables created/verified")
-        except Exception as e:
-            print(f"⚠️ create_all error: {e}")
-
-# Production vs Development startup
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 IS_PRODUCTION = bool(DATABASE_URL) and "localhost" not in DATABASE_URL
 
-if IS_PRODUCTION:
-    # Production: safe migrations only, never drop tables
-    print("🌐 Production mode: running safe migrations...")
+def safe_migrate():
+    """Add missing columns and tables without crashing"""
+    from sqlalchemy import text, inspect
+    engine = database.engine
     try:
-        run_migrations()
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            existing_tables = inspector.get_table_names()
+
+            # Add barcode to users if missing
+            if 'users' in existing_tables:
+                cols = [c['name'] for c in inspector.get_columns('users')]
+                if 'barcode' not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN barcode VARCHAR"))
+                    conn.commit()
+                    print("✅ Migrated: added barcode to users")
+
+            # Create new ERP tables if missing
+            new_tables = ['salaries','leaves','payslips','products','sales','sale_items']
+            missing = [t for t in new_tables if t not in existing_tables]
+            if missing:
+                # Import models here to avoid circular imports at module level
+                from backend import models
+                models.Base.metadata.create_all(bind=engine)
+                print(f"✅ Migrated: created tables {missing}")
+            else:
+                print("✅ All tables exist")
+
     except Exception as e:
-        # Even if migration fails, don't crash — allow app to start
-        print(f"⚠️ Migration warning (app will still start): {e}")
+        print(f"⚠️ Migration warning (non-fatal): {e}")
+
+# Run startup logic
+if IS_PRODUCTION:
+    print("🌐 Production: running safe migrations...")
+    safe_migrate()
 else:
-    # Development: drop and recreate fresh
-    print("🛠️ Development mode: recreating database...")
+    print("🛠️ Development: recreating DB...")
     try:
+        from backend import models
         models.Base.metadata.drop_all(bind=database.engine)
         models.Base.metadata.create_all(bind=database.engine)
     except Exception as e:
-        print(f"⚠️ Dev DB setup error: {e}")
+        print(f"⚠️ Dev DB error: {e}")
+
+# Import models AFTER migration so relationships are set up correctly
+from backend import models
 
 app = FastAPI(title="Shop ERP System API", version="2.0.0")
 
@@ -75,10 +79,13 @@ app.include_router(analytics.router)
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to Shop ERP System API v2.0",
-        "status": "running",
+        "message": "Shop ERP System API v2.0 running",
         "mode": "production" if IS_PRODUCTION else "development"
     }
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
