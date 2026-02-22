@@ -5,7 +5,20 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: true, // Allow access from network
+    host: true,
     port: 5173,
+  },
+  build: {
+    chunkSizeWarningLimit: 1000, // suppress warning (kB)
+    rollupOptions: {
+      output: {
+        // Split vendor libraries into a separate chunk
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['recharts'],
+          http: ['axios'],
+        }
+      }
+    }
   }
 })
