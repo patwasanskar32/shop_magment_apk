@@ -6,6 +6,7 @@ import Register from './pages/Register'
 import ForgotPassword from './pages/ForgotPassword'
 import OwnerDashboard from './pages/OwnerDashboard'
 import StaffDashboard from './pages/StaffDashboard'
+import LandingPage from './pages/LandingPage'
 
 const PrivateRoute = ({ children, role }) => {
     const { user, loading } = useContext(AuthContext)
@@ -32,7 +33,7 @@ function App() {
                         <StaffDashboard />
                     </PrivateRoute>
                 } />
-                <Route path="/" element={<Navigate to="/login" />} />
+                <Route path="/" element={<LandingPage />} />
             </Routes>
         </Router>
     )
