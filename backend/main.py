@@ -20,13 +20,25 @@ def safe_migrate():
             inspector = inspect(engine)
             existing_tables = inspector.get_table_names()
 
-            # Add barcode to users if missing
+            # Migration 1: add barcode + email columns to users if missing
             if 'users' in existing_tables:
                 cols = [c['name'] for c in inspector.get_columns('users')]
                 if 'barcode' not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN barcode VARCHAR"))
-                    conn.commit()
-                    print("✅ Migrated: added barcode to users")
+                    try:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN barcode VARCHAR"))
+                        conn.commit()
+                        print("✅ Added barcode column to users")
+                    except Exception as e:
+                        print(f"⚠️ barcode column: {e}")
+                        conn.rollback()
+                if 'email' not in cols:
+                    try:
+                        conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR"))
+                        conn.commit()
+                        print("✅ Added email column to users")
+                    except Exception as e:
+                        print(f"⚠️ email column: {e}")
+                        conn.rollback()
 
             # Create new ERP tables if missing
             new_tables = ['salaries','leaves','payslips','products','sales','sale_items']

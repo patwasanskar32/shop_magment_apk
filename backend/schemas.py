@@ -1,9 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
     username: str
+    email: Optional[str] = None
     role: str = "staff"
 
 class UserCreate(UserBase):
@@ -11,6 +12,7 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    email: Optional[str] = None
     organization_id: Optional[int] = None
     barcode: Optional[str] = None
     created_at: datetime
@@ -59,6 +61,7 @@ class MessageResponse(MessageBase):
 
 class RegisterOwnerRequest(BaseModel):
     username: str
+    email: str
     password: str
     organization_name: str
 

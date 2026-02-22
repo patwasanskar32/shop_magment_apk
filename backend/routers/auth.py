@@ -41,26 +41,26 @@ def register_owner(request: schemas.RegisterOwnerRequest, db: Session = Depends(
     # Check if username is already taken
     existing_user = db.query(models.User).filter(models.User.username == request.username).first()
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already exists"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
+
+    # Check if email is already taken
+    existing_email = db.query(models.User).filter(models.User.email == request.email).first()
+    if existing_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered. Please login or use a different email.")
+
     # Check if organization name already exists
     existing_org = db.query(models.Organization).filter(models.Organization.name == request.organization_name).first()
     if existing_org:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Organization name already exists. Please choose a different name."
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Organization name already exists. Please choose a different name.")
     
     # Create the owner account first (without organization_id)
     hashed_password = auth.get_password_hash(request.password)
     new_owner = models.User(
         username=request.username,
+        email=request.email,
         password_hash=hashed_password,
         role="owner",
-        organization_id=None  # Will be set after organization is created
+        organization_id=None
     )
     
     db.add(new_owner)
