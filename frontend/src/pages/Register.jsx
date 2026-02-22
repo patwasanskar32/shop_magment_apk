@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import API_BASE_URL from '../config'
 
+const sleep = (ms) => new Promise(res => setTimeout(res, ms))
+
 const Register = () => {
     const [username, setUsername] = useState('')
     const [email, setEmail] = useState('')
@@ -11,27 +13,26 @@ const Register = () => {
     const [organizationName, setOrganizationName] = useState('')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const [statusMsg, setStatusMsg] = useState('')
     const navigate = useNavigate()
 
     const handleSubmit = async (e) => {
         e.preventDefault()
         setError('')
+        setStatusMsg('')
 
         if (!username || !email || !password || !confirmPassword || !organizationName) {
             setError('All fields are required')
             return
         }
-
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             setError('Please enter a valid email address')
             return
         }
-
         if (password !== confirmPassword) {
             setError('Passwords do not match')
             return
         }
-
         if (password.length < 6) {
             setError('Password must be at least 6 characters')
             return
@@ -39,31 +40,55 @@ const Register = () => {
 
         setLoading(true)
 
-        try {
-            await axios.post(`${API_BASE_URL}/auth/register-owner`, {
-                username,
-                email,
-                password,
-                organization_name: organizationName
-            })
-            alert('Owner account created successfully! Please login.')
-            navigate('/login')
-        } catch (err) {
-            console.error('Registration error:', err)
-            if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
-                setError('❌ Cannot connect to server. Please try again in a minute.')
-            } else if (err.response?.data?.detail) {
-                setError('❌ ' + err.response.data.detail)
-            } else if (err.response?.status === 500) {
-                setError('❌ Server error (500). Please wait 1 minute and try again.')
-            } else if (err.response?.status === 422) {
-                setError('❌ Invalid data. Please check all fields.')
-            } else {
-                setError('❌ Registration failed: ' + (err.message || 'Please try again.'))
+        // Auto-retry logic: if server is sleeping (Render cold start), retry up to 3 times
+        let attempt = 0
+        const maxAttempts = 3
+        while (attempt < maxAttempts) {
+            attempt++
+            try {
+                if (attempt > 1) {
+                    setStatusMsg(`⏳ Waking up server... (attempt ${attempt}/${maxAttempts})`)
+                    await sleep(10000) // wait 10s between retries
+                } else {
+                    setStatusMsg('Connecting to server...')
+                }
+
+                await axios.post(`${API_BASE_URL}/auth/register-owner`, {
+                    username,
+                    email,
+                    password,
+                    organization_name: organizationName
+                }, { timeout: 30000 })
+
+                setStatusMsg('')
+                alert('✅ Account created! Please check your email to verify your address.')
+                navigate('/login')
+                return
+
+            } catch (err) {
+                const isNetworkErr = err.code === 'ERR_NETWORK' || err.code === 'ECONNABORTED' || err.message === 'Network Error'
+                if (isNetworkErr && attempt < maxAttempts) {
+                    // Will retry — loop continues
+                    continue
+                }
+
+                setStatusMsg('')
+                if (isNetworkErr) {
+                    setError('❌ Server is starting up — please wait 30 seconds and try again.')
+                } else if (err.response?.data?.detail) {
+                    setError('❌ ' + err.response.data.detail)
+                } else if (err.response?.status === 500) {
+                    setError('❌ Server error (500). Please wait and try again.')
+                } else if (err.response?.status === 422) {
+                    setError('❌ Invalid data. Please check all fields.')
+                } else {
+                    setError('❌ ' + (err.message || 'Registration failed. Please try again.'))
+                }
+                break
             }
-        } finally {
-            setLoading(false)
         }
+
+        setLoading(false)
     }
 
     const inputStyle = {
@@ -94,6 +119,12 @@ const Register = () => {
                     <input type="password" placeholder="Confirm Password" value={confirmPassword}
                         onChange={e => setConfirmPassword(e.target.value)} style={inputStyle} disabled={loading} />
 
+                    {statusMsg && (
+                        <p style={{ color: '#93c5fd', margin: 0, fontSize: '0.875rem', background: 'rgba(59,130,246,0.1)', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(59,130,246,0.25)', textAlign: 'center' }}>
+                            {statusMsg}
+                        </p>
+                    )}
+
                     {error && (
                         <p style={{ color: '#f87171', margin: 0, fontSize: '0.875rem', background: 'rgba(239,68,68,0.1)', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid rgba(239,68,68,0.25)' }}>
                             {error}
@@ -105,7 +136,7 @@ const Register = () => {
                         background: loading ? 'rgba(102,126,234,0.4)' : 'linear-gradient(135deg,#667eea,#764ba2)',
                         cursor: loading ? 'not-allowed' : 'pointer'
                     }}>
-                        {loading ? 'Creating account...' : '🚀 Create Owner Account'}
+                        {loading ? '⏳ Please wait...' : '🚀 Create Owner Account'}
                     </button>
 
                     <p style={{ textAlign: 'center', margin: '0.5rem 0 0', color: 'rgba(255,255,255,0.4)', fontSize: '0.85rem' }}>
