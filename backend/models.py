@@ -31,6 +31,12 @@ class User(Base):
     barcode = Column(String, unique=True, index=True, nullable=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Email verification
+    email_verified = Column(Boolean, default=False)
+    email_verify_token = Column(String, nullable=True)
+    # Password reset
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
 
     # Relationships
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])

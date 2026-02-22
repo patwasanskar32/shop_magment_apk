@@ -7,6 +7,8 @@ import ForgotPassword from './pages/ForgotPassword'
 import OwnerDashboard from './pages/OwnerDashboard'
 import StaffDashboard from './pages/StaffDashboard'
 import LandingPage from './pages/LandingPage'
+import VerifyEmail from './pages/VerifyEmail'
+import ResetPassword from './pages/ResetPassword'
 
 const PrivateRoute = ({ children, role }) => {
     const { user, loading } = useContext(AuthContext)
@@ -33,6 +35,8 @@ function App() {
                         <StaffDashboard />
                     </PrivateRoute>
                 } />
+                <Route path="/verify-email" element={<VerifyEmail />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/" element={<LandingPage />} />
             </Routes>
         </Router>

@@ -39,6 +39,22 @@ def safe_migrate():
                     except Exception as e:
                         print(f"⚠️ email column: {e}")
                         conn.rollback()
+                # Email verification + password reset columns
+                for col_def in [
+                    ("email_verified", "BOOLEAN DEFAULT FALSE"),
+                    ("email_verify_token", "VARCHAR"),
+                    ("reset_token", "VARCHAR"),
+                    ("reset_token_expires", "TIMESTAMP"),
+                ]:
+                    col_name, col_type = col_def
+                    if col_name not in cols:
+                        try:
+                            conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+                            conn.commit()
+                            print(f"✅ Added {col_name} column to users")
+                        except Exception as e:
+                            print(f"⚠️ {col_name} column: {e}")
+                            conn.rollback()
 
             # Create new ERP tables if missing
             new_tables = ['salaries','leaves','payslips','products','sales','sale_items']

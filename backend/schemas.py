@@ -203,3 +203,20 @@ class SaleResponse(BaseModel):
     items: List[SaleItemResponse] = []
     class Config:
         from_attributes = True
+
+# ─── Auth Email Schemas ────────────────────────────────────────────────────
+
+class ForgotPasswordEmailRequest(BaseModel):
+    email: str
+
+class ResetPasswordTokenRequest(BaseModel):
+    token: str
+    new_password: str
+
+class PasswordResetRequest(BaseModel):
+    username: str
+    new_password: str
+
+class PasswordResetResponse(BaseModel):
+    message: str
+    username: str
