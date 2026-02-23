@@ -96,6 +96,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:5173",
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",  # allow all Vercel preview URLs
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],

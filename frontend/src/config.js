@@ -1,7 +1,7 @@
-// API configuration
-// Priority: Vercel env variable → hardcoded Render URL → localhost for dev
-const API_BASE_URL =
+// API base URL — strip trailing slash to prevent //health double-slash bug
+const API_BASE_URL = (
     import.meta.env.VITE_API_URL ||
-    'https://shop-magment-apk.onrender.com';
+    'https://shop-magment-apk.onrender.com'
+).replace(/\/$/, '');
 
 export default API_BASE_URL;
