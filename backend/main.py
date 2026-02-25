@@ -56,6 +56,30 @@ def safe_migrate():
                             print(f"⚠️ {col_name} column: {e}")
                             conn.rollback()
 
+            # Migration 2: add organization_id to attendance table if missing
+            if 'attendance' in existing_tables:
+                att_cols = [c['name'] for c in inspector.get_columns('attendance')]
+                if 'organization_id' not in att_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE attendance ADD COLUMN organization_id INTEGER"))
+                        conn.commit()
+                        print("✅ Added organization_id column to attendance")
+                    except Exception as e:
+                        print(f"⚠️ attendance.organization_id: {e}")
+                        conn.rollback()
+
+            # Migration 3: add organization_id to messages table if missing
+            if 'messages' in existing_tables:
+                msg_cols = [c['name'] for c in inspector.get_columns('messages')]
+                if 'organization_id' not in msg_cols:
+                    try:
+                        conn.execute(text("ALTER TABLE messages ADD COLUMN organization_id INTEGER"))
+                        conn.commit()
+                        print("✅ Added organization_id column to messages")
+                    except Exception as e:
+                        print(f"⚠️ messages.organization_id: {e}")
+                        conn.rollback()
+
             # Create new ERP tables if missing
             new_tables = ['salaries','leaves','payslips','products','sales','sale_items']
             missing = [t for t in new_tables if t not in existing_tables]
